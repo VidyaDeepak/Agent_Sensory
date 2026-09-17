@@ -186,7 +186,7 @@ def snake_to_title(s: str) -> str:
     return s.replace("_", " ").strip().title()
 
 
-COMPARE_SPLIT_RE = re.compile(r"(?i)\s+(?:and|vs\.?|versus|against|from)\s+")
+COMPARE_SPLIT_RE = re.compile(r"(?i)\s+(?:and|vs\.?|versus|against|from|with)\s+")
 COMPARE_TRIGGER_RE = re.compile(
     r"(?i)\bcompare\b|\bvs\.?\b|\bversus\b|\bseparates?\b|\bdiffers?\b|"
     r"\bdifference between\b|\bdistinguish(?:es)?\b|\bsimilar\b|\balike\b"
