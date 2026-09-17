@@ -95,16 +95,69 @@ def _by_benefit(benefit_readable: str, top_n: int) -> dict:
     }
 
 
+def _by_product_and_benefit(product: str, benefit_readable: str, top_n: int) -> dict:
+    """The case _single() previously dropped: a question naming BOTH a
+    product and a benefit (e.g. "how does X score on Y") was falling
+    through to the benefit-only leaderboard and silently discarding the
+    product. This returns that product's actual score on that benefit,
+    plus its rank among every product tested on it for context."""
+    df = _load()
+    benefit_raw = _benefit_map[benefit_readable]
+    subset = df[df["benefit"] == benefit_raw].sort_values("value", ascending=False).reset_index(drop=True)
+    if subset.empty:
+        return {"ok": False, "module": "bh_blindhut", "error": "no_data"}
+
+    match_idx = subset.index[subset["product_name"] == product]
+    if len(match_idx) == 0:
+        return {
+            "ok": False, "module": "bh_blindhut", "error": "product_not_tested_on_benefit",
+            "product": product, "benefit": benefit_readable,
+        }
+
+    rank = int(match_idx[0]) + 1
+    total = len(subset)
+    score = round(float(subset.loc[match_idx[0], "value"]), 2)
+
+    top = subset.head(top_n)
+    labels = [_short(n) for n in top["product_name"]]
+    values = [round(v, 2) for v in top["value"]]
+    table = [{"Product": r.product_name, "Score": round(r.value, 2)} for r in top.itertuples()]
+    if product not in top["product_name"].values:
+        # Keep the queried product visible in the table even when it
+        # ranks outside the requested top_n — otherwise the chart shows
+        # everyone except the product that was actually asked about.
+        table.append({"Product": product, "Score": score})
+
+    summary = (
+        f"'{product}' scores {score} on '{benefit_readable}', ranking {rank} of {total} "
+        f"products tested on this benefit."
+    )
+    return {
+        "ok": True, "module": "bh_blindhut",
+        "title": f"{product} on {benefit_readable} (blind hut)",
+        "product": product, "benefit": benefit_readable,
+        "chart": {"type": "bar", "labels": labels, "values": values, "value_label": "Score"},
+        "table": table, "summary": summary,
+    }
+
+
 def structured(benefit: Optional[str] = None, product: Optional[str] = None,
                compare_product: Optional[str] = None, top_n: int = 8) -> dict:
     """Explicit-parameter counterpart to answer(). Provide `product` alone
     for a product's benefit profile, `benefit` alone for the leaderboard on
-    one benefit, or `product` + `compare_product` for a head-to-head."""
+    one benefit, `product` + `benefit` for that product's score on that one
+    benefit, or `product` + `compare_product` for a head-to-head."""
     _load()
     if product and compare_product:
         if product not in _products or compare_product not in _products:
             return {"ok": False, "module": "bh_blindhut", "error": "no_product_match", "known_products": _products[:15]}
         return _compare(product, compare_product, top_n)
+    if product and benefit:
+        if product not in _products:
+            return {"ok": False, "module": "bh_blindhut", "error": "no_data"}
+        if benefit not in _benefit_map:
+            return {"ok": False, "module": "bh_blindhut", "error": "no_match", "known_benefits": _benefits_readable}
+        return _by_product_and_benefit(product, benefit, top_n)
     if product:
         if product not in _products:
             return {"ok": False, "module": "bh_blindhut", "error": "no_data"}
@@ -126,7 +179,10 @@ def _single(question: str, top_n: int) -> dict:
     product = best_match(question, _products, threshold=0.5)
     benefit_readable = best_match(question, _benefits_readable)
 
-    if product and not benefit_readable:
+    if product and benefit_readable:
+        return _by_product_and_benefit(product, benefit_readable, top_n)
+
+    if product:
         return _by_product(product, top_n)
 
     if benefit_readable:
